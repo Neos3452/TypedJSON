@@ -1,4 +1,12 @@
 language: node_js
 node_js:
-  - "node"
+  - node
+addons:
+  sonarcloud:
+    organization: neos3452
+    token:
+      secure: "Vv3O6CYlMUAHGj8o2GTJRFuVasGLx94Jc16kBM0iklOai3cIEFWgYP5n724ukhYUjj+os4+7W9o2B7PDETbf4x5g0FiqX0AYKrqBkGtotTCq5u642YVjEo3SVsUtgrHHaA9AGBkNMOpf25X0WXJpvRMaumf/AQxC2PwNVYLUTjVyetHtB3684mOhnYXL2Ha3zGDbWQ1Ayw7Ie2L5ViJAkZZjEhg2w84XyMqEGl/iRiYiT+AKILF4CCqW4DEUds0Wx0LSx1MoWs6cPwZhn5tLuKdmiMXsS6bormhNp/0BwA8NFfPhUb5bhr3oHi0KMOZoeB8ooORIEtaZLwMYsvKVCYlHrMCgdE2Z/9mFec6CvrZnOM6TtpxReBKs5mE3A3/rIJB3OnMT3TMg/+z8AMnf8hQXDFPDiI3Y/elk2D3wTr3ly8QfnroYCgvs/Xm0YD9lY5mcAXdIuGOZR593VuH13KqiddwTzS8J+FUbOqhBEmov5bmdbJTmj2+hjVEGUN878XyTSxygb9jftVMrzBuUs8uJH5If1YDGBUpVtRu+In8wnW3U7v+TDC1Yb10Z8RJCJ7aNQPfTwnLJqH10MpO3QtvxKUE4LF1OC/n5+i3dD7rqlzkJncA7MZ6LhxGLncM6vfBnRkB8sYbeESPrN5LvNox5HV/dZIRozS2zTI7/4/U="
+script:
+  - npm test
+  - sonar-scanner "-Dsonar.projectVersion=$(jq -r '.version' package.json)" -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
 
