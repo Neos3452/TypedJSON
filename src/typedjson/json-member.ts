@@ -3,6 +3,11 @@
 } from "./helpers";
 import { injectMetadataInformation } from "./metadata";
 import { extractOptionBase, OptionsBase } from "./options-base";
+import {
+    ConcreteTypeDescriptor,
+    ensureTypeDescriptor,
+    TypeDescriptor,
+} from "./type-descriptor";
 
 declare abstract class Reflect
 {
@@ -15,7 +20,7 @@ export interface IJsonMemberOptions extends OptionsBase
      * Sets the constructor of the property.
      * Optional with ReflectDecorators.
      */
-    constructor?: Function;
+    constructor?: Function|TypeDescriptor;
 
     /** When set, indicates that the member must be present when deserializing. */
     isRequired?: boolean;
@@ -72,7 +77,7 @@ export function jsonMember<TFunction extends Function>(optionsOrTarget?: IJsonMe
             }
 
             injectMetadataInformation(target, propKey, {
-                ctor: reflectPropCtor,
+                type: new ConcreteTypeDescriptor(reflectPropCtor),
                 key: propKey.toString(),
                 name: propKey.toString(),
             });
@@ -89,7 +94,7 @@ export function jsonMember<TFunction extends Function>(optionsOrTarget?: IJsonMe
         return (target: Object, _propKey: string | symbol) =>
         {
             let options: IJsonMemberOptions = optionsOrTarget || {};
-            let propCtor: Function|undefined;
+            let propCtor: Function|TypeDescriptor|undefined;
             let decoratorName = `@jsonMember on ${nameof(target.constructor)}.${String(_propKey)}`; // For error messages.
 
             if (options.hasOwnProperty("constructor"))
@@ -101,7 +106,8 @@ export function jsonMember<TFunction extends Function>(optionsOrTarget?: IJsonMe
                 }
 
                 // Property constructor has been specified. Use ReflectDecorators (if available) to check whether that constructor is correct. Warn if not.
-                if (isReflectMetadataSupported && !isSubtypeOf(options.constructor, Reflect.getMetadata("design:type", target, _propKey)))
+                // todo typedescriptor
+                if (isReflectMetadataSupported && !isSubtypeOf(options.constructor as Function, Reflect.getMetadata("design:type", target, _propKey)))
                 {
                     logWarning(`${decoratorName}: detected property type does not match 'constructor' option.`);
                 }
@@ -128,13 +134,19 @@ export function jsonMember<TFunction extends Function>(optionsOrTarget?: IJsonMe
                 }
             }
 
-            if (isSpecialPropertyType(decoratorName, propCtor))
+            // todo typedescriptor
+            if (isSpecialPropertyType(decoratorName, propCtor as Function))
             {
                 return;
             }
 
+            let type;
+            if (propCtor)
+            {
+                type = ensureTypeDescriptor(propCtor);
+            }
             injectMetadataInformation(target, _propKey, {
-                ctor: propCtor,
+                type,
                 emitDefaultValue: options.emitDefaultValue,
                 isRequired: options.isRequired,
                 options: extractOptionBase(options),

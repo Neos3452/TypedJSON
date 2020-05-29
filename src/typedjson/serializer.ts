@@ -9,43 +9,16 @@
 import { IndexedObject } from "./types";
 import { JsonObjectMetadata } from "./metadata";
 import { getOptionValue, mergeOptions, OptionsBase } from "./options-base";
+import {
+    ArrayTypeDescriptor,
+    MapTypeDescriptor,
+    SetTypeDescriptor,
+    TypeDescriptor,
+} from "./type-descriptor";
 
 export interface IScopeTypeInfo
 {
-    selfType: Function;
-    elementTypes?: Function[];
-    keyType?: Function;
-}
-
-export interface IScopeArrayTypeInfo extends IScopeTypeInfo
-{
-    selfType: new () => Array<any>;
-    elementTypes: Function[];
-}
-
-function isArrayTypeInfo(typeInfo: IScopeTypeInfo): typeInfo is IScopeArrayTypeInfo {
-    return typeInfo.selfType === Array;
-}
-
-export interface IScopeSetTypeInfo extends IScopeTypeInfo
-{
-    selfType: new () => Set<any>;
-    elementTypes: [Function];
-}
-
-function isSetTypeInfo(typeInfo: IScopeTypeInfo): typeInfo is IScopeSetTypeInfo {
-    return typeInfo.selfType === Set;
-}
-
-export interface IScopeMapTypeInfo extends IScopeTypeInfo
-{
-    selfType: new () => Map<any, any>;
-    elementTypes: [Function];
-    keyType: Function;
-}
-
-function isMapTypeInfo(typeInfo: IScopeTypeInfo): typeInfo is IScopeMapTypeInfo {
-    return typeInfo.selfType === Map;
+    type: TypeDescriptor;
 }
 
 export type TypeHintEmitter
@@ -122,9 +95,9 @@ export class Serializer
         if (this.retrievePreserveNull(memberOptions) && sourceObject === null) return null;
         if (!isValueDefined(sourceObject)) return;
 
-        if (!isInstanceOf(sourceObject, typeInfo.selfType))
+        if (!isInstanceOf(sourceObject, typeInfo.type.ctor))
         {
-            let expectedName = nameof(typeInfo.selfType);
+            let expectedName = nameof(typeInfo.type.ctor);
             let actualName = nameof(sourceObject.constructor);
 
             this._errorHandler(new TypeError(
@@ -133,31 +106,31 @@ export class Serializer
             return;
         }
 
-        if (isDirectlySerializableNativeType(typeInfo.selfType))
+        if (isDirectlySerializableNativeType(typeInfo.type.ctor))
         {
             return sourceObject;
         }
-        else if (typeInfo.selfType === ArrayBuffer)
+        else if (typeInfo.type.ctor === ArrayBuffer)
         {
             return this.convertAsArrayBuffer(sourceObject);
         }
-        else if (typeInfo.selfType === DataView)
+        else if (typeInfo.type.ctor === DataView)
         {
             return this.convertAsDataView(sourceObject);
         }
-        else if (isArrayTypeInfo(typeInfo))
+        else if (typeInfo.type instanceof ArrayTypeDescriptor)
         {
-            return this.convertAsArray(sourceObject, typeInfo.elementTypes, memberName, memberOptions);
+            return this.convertAsArray(sourceObject, typeInfo.type, memberName, memberOptions);
         }
-        else if (isSetTypeInfo(typeInfo))
+        else if (typeInfo.type instanceof SetTypeDescriptor)
         {
-            return this.convertAsSet(sourceObject, typeInfo.elementTypes[0], memberName, memberOptions);
+            return this.convertAsSet(sourceObject, typeInfo.type, memberName, memberOptions);
         }
-        else if (isMapTypeInfo(typeInfo))
+        else if (typeInfo.type instanceof MapTypeDescriptor)
         {
-            return this.convertAsMap(sourceObject, typeInfo.keyType, typeInfo.elementTypes[0], memberName, memberOptions);
+            return this.convertAsMap(sourceObject, typeInfo.type, memberName, memberOptions);
         }
-        else if (isTypeTypedArray(typeInfo.selfType))
+        else if (isTypeTypedArray(typeInfo.type.ctor))
         {
             return this.convertAsTypedArray(sourceObject);
         }
@@ -180,7 +153,7 @@ export class Serializer
         let sourceTypeMetadata: JsonObjectMetadata|undefined;
         let targetObject: IndexedObject;
 
-        if (sourceObject.constructor !== typeInfo.selfType && sourceObject instanceof typeInfo.selfType)
+        if (sourceObject.constructor !== typeInfo.type.ctor && sourceObject instanceof typeInfo.type.ctor)
         {
             // The source object is not of the expected type, but it is a valid subtype.
             // This is OK, and we'll proceed to gather object metadata from the subtype instead.
@@ -188,7 +161,7 @@ export class Serializer
         }
         else
         {
-            sourceTypeMetadata = JsonObjectMetadata.getFromConstructor(typeInfo.selfType);
+            sourceTypeMetadata = JsonObjectMetadata.getFromConstructor(typeInfo.type.ctor);
         }
 
         if (sourceTypeMetadata)
@@ -228,13 +201,11 @@ export class Serializer
                 let serialized;
                 if (objMemberMetadata.serializer) {
                     serialized = objMemberMetadata.serializer(sourceObject[objMemberMetadata.key]);
-                } else if (objMemberMetadata.ctor) {
+                } else if (objMemberMetadata.type) {
                     serialized = this.convertSingleValue(
                         sourceObject[objMemberMetadata.key],
                         {
-                            selfType: objMemberMetadata.ctor,
-                            elementTypes: objMemberMetadata.elementType,
-                            keyType: objMemberMetadata.keyType,
+                            type: objMemberMetadata.type,
                         },
                         `${nameof(sourceMeta.classType)}.${objMemberMetadata.key}`,
                         objMemberOptions,
@@ -261,7 +232,7 @@ export class Serializer
         }
 
         // Add type-hint.
-        this._typeHintEmitter(targetObject, sourceObject, typeInfo.selfType, sourceTypeMetadata);
+        this._typeHintEmitter(targetObject, sourceObject, typeInfo.type.ctor, sourceTypeMetadata);
 
         return targetObject;
     }
@@ -269,19 +240,15 @@ export class Serializer
     /**
      * Performs the conversion of an array of typed objects (or primitive values) to an array of simple javascript objects (or primitive values) for
      * serialization.
-     * @param expectedElementType The expected type of elements. If the array is supposed to be multi-dimensional, subsequent elements define lower dimensions.
      * @param memberName Name of the object being serialized, used for debugging purposes.
      * @param memberOptions If converted as a member, the member options.
      */
     public convertAsArray(
         sourceObject: any[],
-        expectedElementType: Function[],
+        type: ArrayTypeDescriptor,
         memberName = "object",
         memberOptions?: OptionsBase,
     ): any[] {
-        if (expectedElementType.length === 0 || !expectedElementType[0])
-           throw new TypeError(`Could not serialize ${memberName} as Array: missing element type definition.`);
-
         // Check the type of each element, individually.
         // If at least one array element type is incorrect, we return undefined, which results in no
         // value emitted during serialization. This is so that invalid element types don't unexpectedly
@@ -290,9 +257,9 @@ export class Serializer
         sourceObject.forEach((element, i) =>
         {
             if (!(this.retrievePreserveNull(memberOptions) && element === null)
-                && !isInstanceOf(element, expectedElementType[0])
+                && !isInstanceOf(element, type.elementType.ctor)
             ) {
-                const expectedTypeName = nameof(expectedElementType[0]);
+                const expectedTypeName = nameof(type.elementType.ctor);
                 const actualTypeName = element && nameof(element.constructor);
                 throw new TypeError(`Could not serialize ${memberName}[${i}]:` +
                     ` expected '${expectedTypeName}', got '${actualTypeName}'.`);
@@ -300,9 +267,7 @@ export class Serializer
         });
 
         const typeInfoForElements: IScopeTypeInfo = {
-            selfType: expectedElementType[0],
-            // For multidimensional arrays.
-            elementTypes: expectedElementType.length > 1 ? expectedElementType.slice(1) : [],
+            type: type.elementType,
         };
 
         if (memberName)
@@ -331,15 +296,12 @@ export class Serializer
      */
     public convertAsSet(
         sourceObject: Set<any>,
-        expectedElementType: Function,
+        expectedElementType: SetTypeDescriptor,
         memberName = "object",
         memberOptions?: OptionsBase,
     ): any[] {
-        if (!expectedElementType)
-            throw new TypeError(`Could not serialize ${memberName} as Set: missing element type definition.`);
-
         let elementTypeInfo: IScopeTypeInfo = {
-            selfType: expectedElementType,
+            type: expectedElementType.elementType,
         };
 
         // For debugging and error tracking.
@@ -371,33 +333,22 @@ export class Serializer
      * of simple javascript objects with `key` and `value` properties.
      *
      * @param sourceObject
-     * @param expectedKeyType The constructor of the expected Map keys
-     *        (e.g. `Number` for `Map<number, any>`, or `MyClass` for `Map<MyClass, any>`).
-     * @param expectedElementType The constructor of the expected Map values
-     *        (e.g. `Number` for `Map<any, number>`, or `MyClass` for `Map<any, MyClass>`).
      * @param memberName Name of the object being serialized, used for debugging purposes.
      * @param memberOptions If converted as a member, the member options.
      */
     public convertAsMap(
         sourceObject: Map<any, any>,
-        expectedKeyType: Function,
-        expectedElementType: Function,
+        type: MapTypeDescriptor,
         memberName = "object",
         memberOptions?: OptionsBase,
     ): Array<{ key: any, value: any }> {
-        if (!expectedElementType)
-            throw new TypeError(`Could not serialize ${memberName} as Map: missing value type definition.`);
-
-        if (!expectedKeyType)
-            throw new TypeError(`Could not serialize ${memberName} as Map: missing key type definition.`);
 
         let elementTypeInfo: IScopeTypeInfo = {
-            selfType: expectedElementType,
-            elementTypes: [expectedElementType]
+            type: type.valueType,
         };
 
         let keyTypeInfo: IScopeTypeInfo = {
-            selfType: expectedKeyType
+            type: type.keyType,
         };
 
         if (memberName) memberName += "[]";

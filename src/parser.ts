@@ -4,6 +4,8 @@ import { Deserializer, TypeResolver } from "./typedjson/deserializer";
 import { JsonObjectMetadata } from "./typedjson/metadata";
 import { logError, logWarning, nameof, parseToJSObject } from "./typedjson/helpers";
 import { extractOptionBase, OptionsBase } from "./typedjson/options-base";
+import { createArrayType } from "./typedjson/json-array-member";
+import { ensureTypeDescriptor, MapT, SetT } from './typedjson/type-descriptor';
 
 export type JsonTypes = Object|boolean|string|number|null|undefined;
 export { TypeResolver, TypeHintEmitter };
@@ -345,7 +347,7 @@ export class TypedJSON<T>
         try
         {
             result = this.deserializer.convertSingleValue(json, {
-                selfConstructor: this.rootConstructor,
+                type: ensureTypeDescriptor(this.rootConstructor),
                 knownTypes: knownTypes,
             }) as T;
         }
@@ -369,10 +371,7 @@ export class TypedJSON<T>
         if (json instanceof Array)
         {
             return this.deserializer.convertAsArray(json, {
-                selfConstructor: Array,
-                elementConstructor: new Array(dimensions - 1)
-                    .fill(Array)
-                    .concat(this.rootConstructor),
+                type: createArrayType(ensureTypeDescriptor(this.rootConstructor), dimensions),
                 knownTypes: this._mapKnownTypes(this.globalKnownTypes),
             });
         }
@@ -392,8 +391,7 @@ export class TypedJSON<T>
         if (json instanceof Array)
         {
             return this.deserializer.convertAsSet(json, {
-                selfConstructor: Array,
-                elementConstructor: [this.rootConstructor],
+                type: SetT(this.rootConstructor),
                 knownTypes: this._mapKnownTypes(this.globalKnownTypes)
             });
         }
@@ -414,10 +412,8 @@ export class TypedJSON<T>
         if (json instanceof Array)
         {
             return this.deserializer.convertAsMap(json, {
-                selfConstructor: Array,
-                elementConstructor: [this.rootConstructor],
+                type: MapT(keyConstructor, this.rootConstructor),
                 knownTypes: this._mapKnownTypes(this.globalKnownTypes),
-                keyConstructor: keyConstructor
             });
         }
         else
@@ -441,7 +437,7 @@ export class TypedJSON<T>
         {
             return this.serializer.convertSingleValue(
                 object,
-        {selfType: this.rootConstructor},
+        {type: ensureTypeDescriptor(this.rootConstructor)},
             );
         }
         catch (e)
@@ -459,9 +455,8 @@ export class TypedJSON<T>
     {
         try
         {
-            const elementConstructorArray =
-                new Array(dimensions - 1).fill(Array).concat(this.rootConstructor);
-            return this.serializer.convertAsArray(object, elementConstructorArray);
+            return this.serializer.convertAsArray(
+                object, createArrayType(ensureTypeDescriptor(this.rootConstructor), dimensions));
         }
         catch (e)
         {
@@ -473,7 +468,7 @@ export class TypedJSON<T>
     {
         try
         {
-            return this.serializer.convertAsSet(object, this.rootConstructor);
+            return this.serializer.convertAsSet(object, SetT(this.rootConstructor));
         }
         catch (e)
         {
@@ -485,7 +480,7 @@ export class TypedJSON<T>
     {
         try
         {
-            return this.serializer.convertAsMap(object, keyConstructor, this.rootConstructor);
+            return this.serializer.convertAsMap(object, MapT(keyConstructor, this.rootConstructor));
         }
         catch (e)
         {

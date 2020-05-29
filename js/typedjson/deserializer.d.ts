@@ -1,9 +1,8 @@
 import { IndexedObject } from "./types";
 import { OptionsBase } from "./options-base";
+import { TypeDescriptor } from "./type-descriptor";
 export interface IScopeTypeInfo {
-    selfConstructor: Function;
-    elementConstructor?: Function[];
-    keyConstructor?: Function;
+    type: TypeDescriptor;
     knownTypes: Map<string, Function>;
 }
 export declare type TypeResolver = (sourceObject: Object, knownTypes: Map<string, Function>) => Function | undefined | null;

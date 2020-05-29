@@ -2,12 +2,17 @@ import { nameof, logError, isSubtypeOf, isValueDefined, isDirectlyDeserializable
 import { Constructor, IndexedObject } from "./types";
 import { JsonObjectMetadata } from "./metadata";
 import { getOptionValue, mergeOptions, OptionsBase } from "./options-base";
+import {
+    ArrayTypeDescriptor,
+    ConcreteTypeDescriptor,
+    MapTypeDescriptor,
+    SetTypeDescriptor,
+    TypeDescriptor,
+} from "./type-descriptor";
 
 export interface IScopeTypeInfo
 {
-    selfConstructor: Function;
-    elementConstructor?: Function[];
-    keyConstructor?: Function;
+    type: TypeDescriptor,
     knownTypes: Map<string, Function>;
 }
 
@@ -66,7 +71,12 @@ export class Deserializer<T>
             return undefined;
         }
 
-        let expectedSelfType = sourceObjectTypeInfo.selfConstructor;
+        if (!(sourceObjectTypeInfo.type instanceof ConcreteTypeDescriptor)) {
+            this._errorHandler(new TypeError(`Cannot deserialize ${objectName}: type is an unknown generic type.`));
+            return undefined;
+        }
+
+        let expectedSelfType = sourceObjectTypeInfo.type.ctor;
         let sourceObjectMetadata = JsonObjectMetadata.getFromConstructor(expectedSelfType);
         let knownTypeConstructors = sourceObjectTypeInfo.knownTypes;
 
@@ -121,13 +131,13 @@ export class Deserializer<T>
                 let revivedValue;
                 if (objMemberMetadata.deserializer) {
                     revivedValue = objMemberMetadata.deserializer(objMemberValue);
-                } else if (objMemberMetadata.ctor) {
+                } else if (objMemberMetadata.type) {
                     revivedValue = this.convertSingleValue(
                         objMemberValue,
                         {
-                            selfConstructor: objMemberMetadata.ctor,
-                            elementConstructor: objMemberMetadata.elementType,
-                            keyConstructor: objMemberMetadata.keyType,
+                            type: objMemberMetadata.type,
+                            // elementConstructor: objMemberMetadata.elementType,
+                            // keyConstructor: objMemberMetadata.keyType,
                             knownTypes: knownTypeConstructors
                         },
                         objMemberDebugName,
@@ -228,10 +238,10 @@ export class Deserializer<T>
             Object.keys(sourceObject).forEach(sourceKey =>
             {
                 targetObject[sourceKey] = this.convertSingleValue(sourceObject[sourceKey], {
-                    selfConstructor: sourceObject[sourceKey].constructor,
+                    type: new ConcreteTypeDescriptor(sourceObject[sourceKey].constructor),
                     knownTypes: sourceObjectTypeInfo.knownTypes,
-                    elementConstructor: sourceObjectTypeInfo.elementConstructor,
-                    keyConstructor: sourceObjectTypeInfo.keyConstructor
+                    // elementConstructor: sourceObjectTypeInfo.elementConstructor,
+                    // keyConstructor: sourceObjectTypeInfo.keyConstructor
                 }, sourceKey);
             });
 
@@ -245,7 +255,8 @@ export class Deserializer<T>
         memberName = "object",
         memberOptions?: OptionsBase,
     ) {
-        let expectedSelfType = typeInfo.selfConstructor;
+        let expectedSelfType = typeInfo.type;
+        const expectedTypeIsConcrete = expectedSelfType instanceof ConcreteTypeDescriptor;
         let srcTypeNameForDebug = sourceObject ? nameof(sourceObject.constructor) : "undefined";
 
         if (this.retrievePreserveNull(memberOptions) && sourceObject === null)
@@ -256,18 +267,18 @@ export class Deserializer<T>
         {
             return;
         }
-        else if (isDirectlyDeserializableNativeType(expectedSelfType))
+        else if (expectedTypeIsConcrete && isDirectlyDeserializableNativeType(expectedSelfType.ctor))
         {
-            if (sourceObject.constructor === expectedSelfType)
+            if (sourceObject.constructor === expectedSelfType.ctor)
             {
                 return sourceObject;
             }
             else
             {
-                throw new TypeError(this._makeTypeErrorMessage(nameof(expectedSelfType), sourceObject.constructor, memberName));
+                throw new TypeError(this._makeTypeErrorMessage(nameof(expectedSelfType.ctor), sourceObject.constructor, memberName));
             }
         }
-        else if (expectedSelfType === Date)
+        else if (expectedTypeIsConcrete && expectedSelfType.ctor === Date)
         {
             // Support for Date with ISO 8601 format, or with numeric timestamp (milliseconds elapsed since the Epoch).
             // ISO 8601 spec.: https://www.w3.org/TR/NOTE-datetime
@@ -277,7 +288,7 @@ export class Deserializer<T>
             else
                 this._throwTypeMismatchError("Date", "an ISO-8601 string", srcTypeNameForDebug, memberName);
         }
-        else if (expectedSelfType === Float32Array || expectedSelfType === Float64Array)
+        else if (expectedTypeIsConcrete && (expectedSelfType.ctor === Float32Array || expectedSelfType.ctor === Float64Array))
         {
             // Deserialize Float Array from number[].
             return this._convertAsFloatArray(
@@ -288,48 +299,50 @@ export class Deserializer<T>
             );
         }
         else if (
-            expectedSelfType === Uint8Array
-            || expectedSelfType === Uint8ClampedArray
-            || expectedSelfType === Uint16Array
-            || expectedSelfType === Uint32Array
+            expectedTypeIsConcrete && (
+                expectedSelfType.ctor === Uint8Array
+                || expectedSelfType.ctor === Uint8ClampedArray
+                || expectedSelfType.ctor === Uint16Array
+                || expectedSelfType.ctor === Uint32Array
+            )
         ) {
             // Deserialize Uint array from number[].
             return this._convertAsUintArray(
                 sourceObject,
-                expectedSelfType as any,
+                expectedSelfType.ctor as any,
                 srcTypeNameForDebug,
                 memberName,
             );
         }
-        else if (expectedSelfType === ArrayBuffer)
+        else if (expectedTypeIsConcrete && expectedSelfType.ctor === ArrayBuffer)
         {
             if (typeof sourceObject === "string")
                 return this._stringToArrayBuffer(sourceObject);
             else
                 this._throwTypeMismatchError("ArrayBuffer", "a string source", srcTypeNameForDebug, memberName);
         }
-        else if (expectedSelfType === DataView)
+        else if (expectedTypeIsConcrete && expectedSelfType.ctor === DataView)
         {
             if (typeof sourceObject === "string")
                 return this._stringToDataView(sourceObject);
             else
                 this._throwTypeMismatchError("DataView", "a string source", srcTypeNameForDebug, memberName);
         }
-        else if (expectedSelfType === Array)
+        else if (expectedSelfType instanceof ArrayTypeDescriptor)
         {
             if (Array.isArray(sourceObject))
                 return this.convertAsArray(sourceObject, typeInfo, memberName, memberOptions);
             else
                 throw new TypeError(this._makeTypeErrorMessage(Array, sourceObject.constructor, memberName));
         }
-        else if (expectedSelfType === Set)
+        else if (expectedSelfType instanceof SetTypeDescriptor)
         {
             if (Array.isArray(sourceObject))
                 return this.convertAsSet(sourceObject, typeInfo, memberName, memberOptions);
             else
                 this._throwTypeMismatchError("Set", "Array", srcTypeNameForDebug, memberName);
         }
-        else if (expectedSelfType === Map)
+        else if (expectedSelfType instanceof MapTypeDescriptor)
         {
             if (Array.isArray(sourceObject))
                 return this.convertAsMap(sourceObject, typeInfo, memberName, memberOptions);
@@ -354,15 +367,16 @@ export class Deserializer<T>
             return [];
         }
 
-        if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
-        {
-            this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Array: missing constructor reference of Array elements.`));
-            return [];
-        }
+        // if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
+        // {
+        //     this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Array: missing constructor reference of Array elements.`));
+        //     return [];
+        // }
 
         let elementTypeInfo: IScopeTypeInfo = {
-            selfConstructor: typeInfo.elementConstructor[0],
-            elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
+            type: (typeInfo.type as ArrayTypeDescriptor).elementType,
+            // selfConstructor: typeInfo.elementConstructor[0],
+            // elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
             knownTypes: typeInfo.knownTypes
         };
 
@@ -397,15 +411,16 @@ export class Deserializer<T>
             return new Set<any>();
         }
 
-        if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
-        {
-            this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Set: missing constructor reference of Set elements.`));
-            return new Set<any>();
-        }
+        // if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
+        // {
+        //     this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Set: missing constructor reference of Set elements.`));
+        //     return new Set<any>();
+        // }
 
         let elementTypeInfo: IScopeTypeInfo = {
-            selfConstructor: typeInfo.elementConstructor[0],
-            elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
+            // selfConstructor: typeInfo.elementConstructor[0],
+            // elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
+            type: (typeInfo.type as SetTypeDescriptor).elementType,
             knownTypes: typeInfo.knownTypes
         };
         let resultSet = new Set<any>();
@@ -441,26 +456,27 @@ export class Deserializer<T>
         if (!(Array.isArray(sourceObject)))
             this._errorHandler(new TypeError(this._makeTypeErrorMessage(Array, sourceObject.constructor, memberName)));
 
-        if (!typeInfo.keyConstructor)
-        {
-            this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Map: missing key constructor.`));
-            return new Map<any, any>();
-        }
-
-        if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
-        {
-            this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Map: missing value constructor.`));
-            return new Map<any, any>();
-        }
+        // if (!typeInfo.keyConstructor)
+        // {
+        //     this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Map: missing key constructor.`));
+        //     return new Map<any, any>();
+        // }
+        //
+        // if (!typeInfo.elementConstructor || !typeInfo.elementConstructor.length)
+        // {
+        //     this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Map: missing value constructor.`));
+        //     return new Map<any, any>();
+        // }
 
         let keyTypeInfo: IScopeTypeInfo = {
-            selfConstructor: typeInfo.keyConstructor,
+            type: (typeInfo.type as MapTypeDescriptor).keyType,
             knownTypes: typeInfo.knownTypes
         };
 
         let valueTypeInfo: IScopeTypeInfo = {
-            selfConstructor: typeInfo.elementConstructor[0],
-            elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
+            type: (typeInfo.type as MapTypeDescriptor).valueType,
+            // selfConstructor: typeInfo.elementConstructor[0],
+            // elementConstructor: (typeInfo.elementConstructor.length > 1) ? typeInfo.elementConstructor.slice(1) : [],
             knownTypes: typeInfo.knownTypes
         };
 

@@ -1,4 +1,5 @@
 import { OptionsBase } from "./options-base";
+import { TypeDescriptor } from "./type-descriptor";
 export interface IJsonMapMemberOptions extends OptionsBase {
     /** When set, indicates that the member must be present when deserializing. */
     isRequired?: boolean;
@@ -18,4 +19,4 @@ export interface IJsonMapMemberOptions extends OptionsBase {
  * @param valueConstructor Constructor of map values (e.g. 'Date' for 'Map<number, Date>').
  * @param options Additional options.
  */
-export declare function jsonMapMember(keyConstructor: Function, valueConstructor: Function, options?: IJsonMapMemberOptions): (target: Object, propKey: string | symbol) => void;
+export declare function jsonMapMember(keyConstructor: Function | TypeDescriptor, valueConstructor: Function | TypeDescriptor, options?: IJsonMapMemberOptions): (target: Object, propKey: string | symbol) => void;
