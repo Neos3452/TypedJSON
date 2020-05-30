@@ -128,7 +128,8 @@ export class Serializer
         }
         else if (typeInfo.type instanceof MapTypeDescriptor)
         {
-            return this.convertAsMap(sourceObject, typeInfo.type, memberName, memberOptions);
+            // @ts-ignore
+            return this.convertAsMap(sourceObject, typeInfo.type, memberName, memberOptions, typeInfo.dictionaryShape);
         }
         else if (isTypeTypedArray(typeInfo.type.ctor))
         {
@@ -206,6 +207,8 @@ export class Serializer
                         sourceObject[objMemberMetadata.key],
                         {
                             type: objMemberMetadata.type,
+                            // @ts-ignore
+                            dictionaryShape: objMemberMetadata.dictionaryShape,
                         },
                         `${nameof(sourceMeta.classType)}.${objMemberMetadata.key}`,
                         objMemberOptions,
@@ -341,7 +344,8 @@ export class Serializer
         type: MapTypeDescriptor,
         memberName = "object",
         memberOptions?: OptionsBase,
-    ): Array<{ key: any, value: any }> {
+        dictionaryShape?: boolean,
+    ): IndexedObject|Array<{ key: any, value: any }> {
 
         let elementTypeInfo: IScopeTypeInfo = {
             type: type.valueType,
@@ -353,7 +357,8 @@ export class Serializer
 
         if (memberName) memberName += "[]";
 
-        const resultArray: Array<{ key: any, value: any }> = [];
+        // const resultArray: Array<{ key: any, value: any }> = [];
+        const result = dictionaryShape ? {} : [];
         const preserveNull = this.retrievePreserveNull(memberOptions);
 
         // Convert each *entry* in the map to a simple javascript object with key and value properties.
@@ -370,11 +375,17 @@ export class Serializer
                 || (resultKeyValuePairObj.value === null && preserveNull);
             if (keyDefined && valueDefined)
             {
-                resultArray.push(resultKeyValuePairObj);
+                if (dictionaryShape) {
+                    // @ts-ignore
+                    result[resultKeyValuePairObj.key] = resultKeyValuePairObj.value;
+                } else {
+                    // @ts-ignore
+                    result.push(resultKeyValuePairObj);
+                }
             }
         });
 
-        return resultArray;
+        return result;
     }
 
     /**

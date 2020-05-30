@@ -59,7 +59,7 @@ export declare class Serializer {
      * @param memberName Name of the object being serialized, used for debugging purposes.
      * @param memberOptions If converted as a member, the member options.
      */
-    convertAsMap(sourceObject: Map<any, any>, type: MapTypeDescriptor, memberName?: string, memberOptions?: OptionsBase): Array<{
+    convertAsMap(sourceObject: Map<any, any>, type: MapTypeDescriptor, memberName?: string, memberOptions?: OptionsBase, dictionaryShape?: boolean): IndexedObject | Array<{
         key: any;
         value: any;
     }>;

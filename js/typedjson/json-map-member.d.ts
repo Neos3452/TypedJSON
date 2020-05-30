@@ -11,6 +11,7 @@ export interface IJsonMapMemberOptions extends OptionsBase {
     deserializer?: (json: any) => any;
     /** When set, this serializer will be used to serialize the member. */
     serializer?: (value: any) => any;
+    dictionaryShape?: boolean;
 }
 /**
  * Specifies that the property is part of the object when serializing.

@@ -24,6 +24,8 @@ export interface IJsonMapMemberOptions extends OptionsBase
 
     /** When set, this serializer will be used to serialize the member. */
     serializer?: (value: any) => any;
+
+    dictionaryShape?: boolean;
 }
 
 /**
@@ -70,6 +72,8 @@ export function jsonMapMember(
             name: options.name || propKey.toString(),
             deserializer: options.deserializer,
             serializer: options.serializer,
+            // @ts-ignore
+            dictionaryShape: options.dictionaryShape,
         });
     };
 }

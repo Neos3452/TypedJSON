@@ -592,7 +592,8 @@ var serializer_Serializer = /** @class */ (function () {
             return this.convertAsSet(sourceObject, typeInfo.type, memberName, memberOptions);
         }
         else if (typeInfo.type instanceof MapTypeDescriptor) {
-            return this.convertAsMap(sourceObject, typeInfo.type, memberName, memberOptions);
+            // @ts-ignore
+            return this.convertAsMap(sourceObject, typeInfo.type, memberName, memberOptions, typeInfo.dictionaryShape);
         }
         else if (isTypeTypedArray(typeInfo.type.ctor)) {
             return this.convertAsTypedArray(sourceObject);
@@ -647,6 +648,8 @@ var serializer_Serializer = /** @class */ (function () {
                 else if (objMemberMetadata.type) {
                     serialized = _this.convertSingleValue(sourceObject[objMemberMetadata.key], {
                         type: objMemberMetadata.type,
+                        // @ts-ignore
+                        dictionaryShape: objMemberMetadata.dictionaryShape,
                     }, nameof(sourceMeta_1.classType) + "." + objMemberMetadata.key, objMemberOptions);
                 }
                 else {
@@ -743,7 +746,7 @@ var serializer_Serializer = /** @class */ (function () {
      * @param memberName Name of the object being serialized, used for debugging purposes.
      * @param memberOptions If converted as a member, the member options.
      */
-    Serializer.prototype.convertAsMap = function (sourceObject, type, memberName, memberOptions) {
+    Serializer.prototype.convertAsMap = function (sourceObject, type, memberName, memberOptions, dictionaryShape) {
         var _this = this;
         if (memberName === void 0) { memberName = "object"; }
         var elementTypeInfo = {
@@ -754,7 +757,8 @@ var serializer_Serializer = /** @class */ (function () {
         };
         if (memberName)
             memberName += "[]";
-        var resultArray = [];
+        // const resultArray: Array<{ key: any, value: any }> = [];
+        var result = dictionaryShape ? {} : [];
         var preserveNull = this.retrievePreserveNull(memberOptions);
         // Convert each *entry* in the map to a simple javascript object with key and value properties.
         sourceObject.forEach(function (value, key) {
@@ -767,10 +771,17 @@ var serializer_Serializer = /** @class */ (function () {
             var valueDefined = isValueDefined(resultKeyValuePairObj.value)
                 || (resultKeyValuePairObj.value === null && preserveNull);
             if (keyDefined && valueDefined) {
-                resultArray.push(resultKeyValuePairObj);
+                if (dictionaryShape) {
+                    // @ts-ignore
+                    result[resultKeyValuePairObj.key] = resultKeyValuePairObj.value;
+                }
+                else {
+                    // @ts-ignore
+                    result.push(resultKeyValuePairObj);
+                }
             }
         });
-        return resultArray;
+        return result;
     };
     /**
      * Performs the conversion of a typed javascript array to a simple untyped javascript array.
@@ -889,7 +900,9 @@ var deserializer_Deserializer = /** @class */ (function () {
                         type: objMemberMetadata.type,
                         // elementConstructor: objMemberMetadata.elementType,
                         // keyConstructor: objMemberMetadata.keyType,
-                        knownTypes: knownTypeConstructors
+                        knownTypes: knownTypeConstructors,
+                        // @ts-ignore
+                        dictionaryShape: objMemberMetadata.dictionaryShape,
                     }, objMemberDebugName, objMemberOptions);
                 }
                 else {
@@ -1024,10 +1037,14 @@ var deserializer_Deserializer = /** @class */ (function () {
                 this._throwTypeMismatchError("Set", "Array", srcTypeNameForDebug, memberName);
         }
         else if (expectedSelfType instanceof MapTypeDescriptor) {
-            if (Array.isArray(sourceObject))
-                return this.convertAsMap(sourceObject, typeInfo, memberName, memberOptions);
-            else
+            // @ts-ignore
+            if (Array.isArray(sourceObject) || (typeof sourceObject === "object" && typeInfo.dictionaryShape)) {
+                // @ts-ignore
+                return this.convertAsMap(sourceObject, typeInfo, memberName, memberOptions, typeInfo.dictionaryShape);
+            }
+            else {
                 this._throwTypeMismatchError("Map", "a source array of key-value-pair objects", srcTypeNameForDebug, memberName);
+            }
         }
         else if (sourceObject && typeof sourceObject === "object") {
             return this.convertAsObject(sourceObject, typeInfo, memberName, memberOptions);
@@ -1096,11 +1113,12 @@ var deserializer_Deserializer = /** @class */ (function () {
         });
         return resultSet;
     };
-    Deserializer.prototype.convertAsMap = function (sourceObject, typeInfo, memberName, memberOptions) {
+    Deserializer.prototype.convertAsMap = function (sourceObject, typeInfo, memberName, memberOptions, dictionaryShape) {
         var _this = this;
         if (memberName === void 0) { memberName = "object"; }
-        if (!(Array.isArray(sourceObject)))
+        if (!(Array.isArray(sourceObject)) && !(typeof sourceObject === "object" && dictionaryShape)) {
             this._errorHandler(new TypeError(this._makeTypeErrorMessage(Array, sourceObject.constructor, memberName)));
+        }
         // if (!typeInfo.keyConstructor)
         // {
         //     this._errorHandler(new TypeError(`Could not deserialize ${memberName} as Map: missing key constructor.`));
@@ -1123,20 +1141,30 @@ var deserializer_Deserializer = /** @class */ (function () {
             knownTypes: typeInfo.knownTypes
         };
         var resultMap = new Map();
-        sourceObject.forEach(function (element) {
-            try {
-                var key = _this.convertSingleValue(element.key, keyTypeInfo, memberName, memberOptions);
-                // Undefined/null keys not supported, skip if so.
-                if (isValueDefined(key)) {
-                    resultMap.set(key, _this.convertSingleValue(element.value, valueTypeInfo, memberName + "[" + key + "]", memberOptions));
+        if (dictionaryShape) {
+            Object.keys(sourceObject).forEach(function (key) {
+                var resultKey = _this.convertSingleValue(key, keyTypeInfo, memberName, memberOptions);
+                if (isValueDefined(resultKey)) {
+                    resultMap.set(resultKey, _this.convertSingleValue(sourceObject[key], valueTypeInfo, memberName + "[" + resultKey + "]", memberOptions));
                 }
-            }
-            catch (e) {
-                // Faulty entries are skipped, because a Map is not ordered,
-                // and skipping an entry does not affect others.
-                _this._errorHandler(e);
-            }
-        });
+            });
+        }
+        else {
+            sourceObject.forEach(function (element) {
+                try {
+                    var key = _this.convertSingleValue(element.key, keyTypeInfo, memberName, memberOptions);
+                    // Undefined/null keys not supported, skip if so.
+                    if (isValueDefined(key)) {
+                        resultMap.set(key, _this.convertSingleValue(element.value, valueTypeInfo, memberName + "[" + key + "]", memberOptions));
+                    }
+                }
+                catch (e) {
+                    // Faulty entries are skipped, because a Map is not ordered,
+                    // and skipping an entry does not affect others.
+                    _this._errorHandler(e);
+                }
+            });
+        }
         return resultMap;
     };
     Deserializer.prototype._convertAsFloatArray = function (sourceObject, arrayType, srcTypeNameForDebug, memberName) {
@@ -1799,6 +1827,8 @@ function jsonMapMember(keyConstructor, valueConstructor, options) {
             name: options.name || propKey.toString(),
             deserializer: options.deserializer,
             serializer: options.serializer,
+            // @ts-ignore
+            dictionaryShape: options.dictionaryShape,
         });
     };
 }

@@ -1,4 +1,4 @@
-import { Constructor } from "./typedjson/types";
+import { Constructor, IndexedObject } from "./typedjson/types";
 import { Serializer, TypeHintEmitter } from "./typedjson/serializer";
 import { Deserializer, TypeResolver } from "./typedjson/deserializer";
 import { JsonObjectMetadata } from "./typedjson/metadata";
@@ -152,7 +152,7 @@ export class TypedJSON<T>
         keyCtor: Constructor<K>,
         valueCtor: Constructor<V>,
         settings?: ITypedJSONSettings,
-    ): { key: any, value: any }[]|undefined {
+    ): IndexedObject|{ key: any, value: any }[]|undefined {
         return new TypedJSON(valueCtor, settings).toPlainMap(object, keyCtor);
     }
 
@@ -476,7 +476,7 @@ export class TypedJSON<T>
         }
     }
 
-    public toPlainMap<K>(object: Map<K, T>, keyConstructor: Constructor<K>): { key: any, value: any }[]|undefined
+    public toPlainMap<K>(object: Map<K, T>, keyConstructor: Constructor<K>): IndexedObject|{ key: any, value: any }[]|undefined
     {
         try
         {
