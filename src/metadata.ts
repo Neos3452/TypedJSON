@@ -47,7 +47,7 @@ export class JsonObjectMetadata {
     dataMembers = new Map<string, JsonMemberMetadata>();
 
     /** Set of known types used for polymorphic deserialization */
-    knownTypes = new Set<Serializable<any>>();
+    knownTypes: () => Set<Serializable<any>>;
 
     /** If present override the global function */
     typeHintEmitter?: TypeHintEmitter | null;
@@ -83,6 +83,7 @@ export class JsonObjectMetadata {
         classType: Function,
     ) {
         this.classType = classType;
+        this.knownTypes = () => new Set<Serializable<any>>();
     }
 
     /**
@@ -137,9 +138,10 @@ export class JsonObjectMetadata {
             parentMetadata.dataMembers.forEach((memberMetadata, propKey) => {
                 objectMetadata.dataMembers.set(propKey, memberMetadata);
             });
-            parentMetadata.knownTypes.forEach((knownType) => {
-                objectMetadata.knownTypes.add(knownType);
-            });
+            objectMetadata.knownTypes = parentMetadata.knownTypes;
+            // parentMetadata.knownTypes.forEach((knownType) => {
+            //     objectMetadata.knownTypes.add(knownType);
+            // });
             objectMetadata.typeResolver = parentMetadata.typeResolver;
             objectMetadata.typeHintEmitter = parentMetadata.typeHintEmitter;
         }
@@ -208,7 +210,13 @@ export function injectMetadataInformation(
 
     if (metadata.deserializer === undefined) {
         // If deserializer is not present then type must be
-        metadata.type!.getTypes().forEach(ctor => objectMetadata.knownTypes.add(ctor));
+        const types = metadata.type!.getTypes();
+        const knownFn = objectMetadata.knownTypes;
+        objectMetadata.knownTypes = () => {
+            const setKnown = knownFn();
+            types.forEach(ctor => setKnown.add(ctor));
+            return setKnown;
+        };
     }
 
     // clear metadata of undefined properties to save memory

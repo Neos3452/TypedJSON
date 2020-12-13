@@ -1,4 +1,5 @@
 import {jsonArrayMember, jsonMember, jsonObject, TypedJSON} from '../src';
+import {LazyT} from '../src/type-descriptor';
 import {Everything} from './utils/everything';
 
 describe('basic serialization of', () => {
@@ -72,6 +73,46 @@ describe('basic serialization of', () => {
         });
 
         describe('serialized', () => {
+            it('should contain all data', () => {
+                const person = new Person();
+                person.firstName = 'John';
+                person.lastName = 'Doe';
+                expect(TypedJSON.stringify(person, Person))
+                    .toBe('{"firstName":"John","lastName":"Doe"}');
+            });
+        });
+    });
+
+    describe('single class lazy types', () => {
+        @jsonObject
+        class Person {
+            @jsonMember({constructor: LazyT(() => String)})
+            firstName: string;
+
+            @jsonMember({constructor: LazyT(() => String)})
+            lastName: string;
+
+            getFullName() {
+                return `${this.firstName} ${this.lastName}`;
+            }
+        }
+
+        describe('lazy deserialized', () => {
+            beforeAll(function () {
+                this.person = TypedJSON.parse('{ "firstName": "John", "lastName": "Doe" }', Person);
+            });
+
+            it('should be of proper type', function () {
+                expect(this.person instanceof Person).toBeTruthy();
+            });
+
+            it('should have functions', function () {
+                expect(this.person.getFullName).toBeDefined();
+                expect(this.person.getFullName()).toBe('John Doe');
+            });
+        });
+
+        describe('lazy serialized', () => {
             it('should contain all data', () => {
                 const person = new Person();
                 person.firstName = 'John';

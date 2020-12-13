@@ -7,6 +7,32 @@ export abstract class TypeDescriptor {
     }
 }
 
+export class LazyTypeDescriptor extends TypeDescriptor {
+    constructor(readonly supplier: () => TypeDescriptor) {
+        super(Object);
+    }
+
+    get ctor(): Function {
+        return this.supplier().ctor;
+    }
+
+    set ctor(ctor: Function) {
+        return;
+    }
+
+    getTypes(): Array<Function> {
+        return this.supplier().getTypes();
+    }
+}
+
+export function isLazyT(typeDescriptor: TypeDescriptor): typeDescriptor is LazyTypeDescriptor {
+    return typeDescriptor instanceof LazyTypeDescriptor;
+}
+
+export function LazyT(supplier: () => Typelike): LazyTypeDescriptor {
+    return new LazyTypeDescriptor(() => ensureTypeDescriptor(supplier()));
+}
+
 export type Typelike = TypeDescriptor | Function;
 
 export class ConcreteTypeDescriptor extends TypeDescriptor {

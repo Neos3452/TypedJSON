@@ -11,7 +11,7 @@ import {injectMetadataInformation} from './metadata';
 import {extractOptionBase, OptionsBase} from './options-base';
 import {
     ArrayTypeDescriptor,
-    ensureTypeDescriptor,
+    ensureTypeDescriptor, isLazyT,
     MapTypeDescriptor,
     SetTypeDescriptor,
     TypeDescriptor,
@@ -130,10 +130,13 @@ export function jsonMember<T extends Function>(
                 // Property constructor has been specified. Use ReflectDecorators (if available) to
                 // check whether that constructor is correct. Warn if not.
                 typeDescriptor = ensureTypeDescriptor(options.constructor);
-                if (isReflectMetadataSupported && !isSubtypeOf(
-                    typeDescriptor.ctor,
-                    Reflect.getMetadata('design:type', target, _propKey),
-                )) {
+                if (isReflectMetadataSupported
+                    && !isLazyT(typeDescriptor)
+                    && !isSubtypeOf(
+                        typeDescriptor.ctor,
+                        Reflect.getMetadata('design:type', target, _propKey),
+                    )
+                ) {
                     logWarning(
                         `${decoratorName}: detected property type does not match`
                         + ` 'constructor' option.`,

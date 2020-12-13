@@ -8,7 +8,7 @@ export interface IJsonObjectOptionsBase extends OptionsBase {
     /**
      * An array of known types to recognize when encountering type-hints.
      */
-    knownTypes?: Array<Function> | null;
+    knownTypes?: (() => Array<Function>) | Array<Function> | null;
 
     /**
      * A function that will emit a type hint on the resulting JSON. It will override the global
@@ -123,9 +123,26 @@ export function jsonObject<T extends Object>(
         }
 
         if (options.knownTypes != null) {
-            options.knownTypes
-                .filter(knownType => Boolean(knownType))
-                .forEach(knownType => objectMetadata.knownTypes.add(knownType));
+            const knownTypesFn = options.knownTypes;
+                // Array.isArray(options.knownTypes)
+                // ? () => options.knownTypes
+                // : options.knownTypes;
+            const parentKnownTypes = objectMetadata.knownTypes;
+            objectMetadata.knownTypes = () => {
+                const known = parentKnownTypes();
+                if (options.knownTypes != null) {
+                    const knownTypes = Array.isArray(options.knownTypes)
+                        ? options.knownTypes
+                        : options.knownTypes();
+                    knownTypes
+                        .filter(knownType => Boolean(knownType))
+                        .forEach(knownType => known.add(knownType));
+                }
+                return known;
+            };
+            // options.knownTypes
+            //     .filter(knownType => Boolean(knownType))
+            //     .forEach(knownType => objectMetadata.knownTypes.add(knownType));
         }
     }
 

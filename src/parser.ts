@@ -378,7 +378,7 @@ export class TypedJSON<T> {
         });
 
         if (rootMetadata !== undefined) {
-            rootMetadata.knownTypes.forEach(knownTypeCtor => {
+            rootMetadata.knownTypes().forEach(knownTypeCtor => {
                 knownTypes.set(this.nameResolver(knownTypeCtor), knownTypeCtor);
             });
         }

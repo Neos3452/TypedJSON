@@ -146,10 +146,10 @@ export class Deserializer<T> {
         return result;
     }
 
-    createKnownTypesMap(knowTypes: Set<Function>) {
+    createKnownTypesMap(knowTypes: () => Set<Function>) {
         const map = new Map<string, Function>();
 
-        knowTypes.forEach(ctor => {
+        knowTypes().forEach(ctor => {
             if (this.nameResolver === undefined) {
                 const knownTypeMeta = JsonObjectMetadata.getFromConstructor(ctor);
                 const customName = knownTypeMeta?.isExplicitlyMarked === true
